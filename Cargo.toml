@@ -1,0 +1,21 @@
+[package]
+authors = ["Nathan Ringo <nathan@remexre.xyz>"]
+description = "Generating FFI from DWARF debug info."
+documentation = "https://docs.rs/dwarffi"
+edition = "2018"
+homepage = "https://github.com/remexre/dwarffi"
+license = "Apache-2.0/MIT"
+name = "dwarffi"
+repository = "https://github.com/remexre/dwarffi"
+version = "0.1.0"
+
+[dependencies]
+anyhow = "1.0.25"
+fallible-iterator = "0.2.0"
+gimli = { version = "0.19.0", default-features = false, features = ["read", "std"] }
+log = "0.4.8"
+object = "0.16.0"
+paw = "1.0.0"
+rustc-demangle = "0.1.16"
+stderrlog = "0.4.3"
+structopt = { version = "0.3.5", features = ["paw"] }

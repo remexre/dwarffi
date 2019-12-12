@@ -1,0 +1,17 @@
+[package]
+authors = ["Nathan Ringo <nathan@remexre.xyz>"]
+description = "Example library for dwarffi."
+edition = "2018"
+license = "Apache-2.0/MIT"
+name = "example-lib"
+publish = false
+repository = "https://github.com/remexre/dwarffi"
+version = "0.1.0"
+
+[dependencies]
+
+[lib]
+crate-type = ["dylib"]
+
+[profile.release]
+debug = true
