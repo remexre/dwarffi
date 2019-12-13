@@ -1,12 +1,16 @@
 mod base_type;
 mod function;
+mod pointer_type;
 mod structure;
 
 use crate::item::Item;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use fallible_iterator::FallibleIterator;
-use gimli::{AttributeValue, Dwarf, EndianSlice, EntriesTreeNode, RunTimeEndian, Unit};
-use log::trace;
+use gimli::{
+    AttributeValue, DebuggingInformationEntry, Dwarf, EndianSlice, EntriesTreeNode, RunTimeEndian,
+    Unit,
+};
+use log::{debug, error, trace};
 use object::Object;
 use std::{borrow::Cow, str};
 
@@ -31,7 +35,6 @@ pub fn get_items(file: &[u8]) -> Result<Vec<(usize, Item)>> {
 
     dwarf
         .units()
-        .take(1) // TODO: Remove after debugging done
         .map_err(|err| anyhow::Error::from(err).context("Error getting next unit"))
         .flat_map(|header| {
             let unit = dwarf.unit(header).context("Failed to call unit()")?;
@@ -64,15 +67,17 @@ fn handle_node(
                 if let Some(name) = node.entry().attr_value(gimli::DW_AT_name)? {
                     let name = dwarf.attr_string(unit, name)?;
                     let name = str::from_utf8(&name)?;
-                    bail!("The compilation unit {:?} doesn't appear to be Rust.", name);
+                    error!("The compilation unit {:?} doesn't appear to be Rust.", name);
                 } else {
-                    bail!("The compilation unit doesn't appear to be Rust.");
+                    error!("The compilation unit doesn't appear to be Rust.");
                 }
-            }
-
-            let mut iter = node.children();
-            while let Some(node) = iter.next()? {
-                handle_node(dwarf, unit, module, items, node)?;
+            } else {
+                let mut iter = node.children();
+                while let Some(node) = iter.next()? {
+                    if let Err(err) = handle_node(dwarf, unit, module, items, node) {
+                        error!("{}", err);
+                    }
+                }
             }
         }
         gimli::DW_TAG_namespace => {
@@ -83,7 +88,9 @@ fn handle_node(
 
             let mut iter = node.children();
             while let Some(node) = iter.next()? {
-                handle_node(dwarf, unit, module, items, node)?;
+                if let Err(err) = handle_node(dwarf, unit, module, items, node) {
+                    error!("{}", err);
+                }
             }
 
             module.pop();
@@ -104,20 +111,72 @@ fn handle_node(
             items.push((offset, Item::Function(func)));
         }
         gimli::DW_TAG_base_type => {
-            let bt = base_type::from_base_type(dwarf, unit, &module, node.entry())?;
-            items.push((offset, Item::BaseType(bt)));
+            let ty = base_type::from_base_type(dwarf, unit, &module, node.entry())?;
+            items.push((offset, Item::BaseType(ty)));
+        }
+        gimli::DW_TAG_pointer_type => {
+            let ty = pointer_type::from_pointer_type(dwarf, unit, &module, node.entry())?;
+            items.push((offset, Item::PointerType(ty)));
         }
         gimli::DW_TAG_structure_type => {
             let mut ty = structure::from_structure_type(dwarf, unit, &module, node.entry())?;
 
             let mut iter = node.children();
             while let Some(node) = iter.next()? {
-                structure::modify(dwarf, unit, &mut ty, node.entry())?;
+                structure::modify(dwarf, unit, module, items, &mut ty, node)?;
             }
 
             items.push((offset, Item::Structure(ty)));
         }
-        tag => trace!("[{:x}] unsupported tag: {}", offset, tag),
+        tag => {
+            debug!("Unsupported tag: {}", tag);
+            dump_node(dwarf, unit, node, 0, "")?
+        }
+    }
+    Ok(())
+}
+
+fn dump_die(
+    dwarf: &Dwarf<EndianSlice<RunTimeEndian>>,
+    unit: &Unit<EndianSlice<RunTimeEndian>>,
+    die: &DebuggingInformationEntry<EndianSlice<RunTimeEndian>>,
+    depth: usize,
+    prefix: &str,
+) -> Result<()> {
+    let mut tabs = String::new();
+    for _ in 0..depth {
+        tabs.push('\t');
+    }
+
+    trace!("{}{}[{:x}] {}", prefix, tabs, die.offset().0, die.tag());
+    let mut attrs = die.attrs();
+    while let Some(attr) = attrs.next()? {
+        match dwarf.attr_string(unit, attr.value()) {
+            Ok(value) => {
+                let value = str::from_utf8(&value)?;
+                trace!("{}{}{}: {}", prefix, tabs, attr.name(), value);
+            }
+            Err(gimli::Error::ExpectedStringAttributeValue) => {
+                trace!("{}{}{}: {:?}", prefix, tabs, attr.name(), attr.value());
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    Ok(())
+}
+
+fn dump_node(
+    dwarf: &Dwarf<EndianSlice<RunTimeEndian>>,
+    unit: &Unit<EndianSlice<RunTimeEndian>>,
+    node: EntriesTreeNode<EndianSlice<RunTimeEndian>>,
+    depth: usize,
+    prefix: &str,
+) -> Result<()> {
+    dump_die(dwarf, unit, node.entry(), depth, prefix)?;
+    let mut iter = node.children();
+    while let Some(node) = iter.next()? {
+        dump_node(dwarf, unit, node, depth + 1, prefix)?;
     }
     Ok(())
 }

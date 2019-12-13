@@ -24,3 +24,7 @@ pub fn noret_example() -> ! {
 pub fn float_add(x: f32, y: f64) -> f64 {
     x as f64 + y
 }
+
+pub fn when_is_now() -> String {
+    format!("{:?}", std::time::Instant::now())
+}

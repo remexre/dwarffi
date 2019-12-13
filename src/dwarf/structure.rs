@@ -1,9 +1,13 @@
-use crate::item::{Structure, StructureMember};
+use crate::{
+    dwarf::{dump_die, handle_node},
+    item::{Item, Structure, StructureMember},
+};
 use anyhow::{anyhow, bail, Result};
 use gimli::{
-    AttributeValue, DebuggingInformationEntry, Dwarf, EndianSlice, RunTimeEndian, Unit, UnitOffset,
+    AttributeValue, DebuggingInformationEntry, Dwarf, EndianSlice, EntriesTreeNode, RunTimeEndian,
+    Unit, UnitOffset,
 };
-use log::trace;
+use log::debug;
 use std::str;
 
 pub fn from_structure_type(
@@ -44,12 +48,15 @@ pub fn from_structure_type(
 pub fn modify(
     dwarf: &Dwarf<EndianSlice<RunTimeEndian>>,
     unit: &Unit<EndianSlice<RunTimeEndian>>,
+    module: &mut Vec<String>,
+    items: &mut Vec<(usize, Item)>,
     structure: &mut Structure,
-    die: &DebuggingInformationEntry<EndianSlice<RunTimeEndian>>,
+    node: EntriesTreeNode<EndianSlice<RunTimeEndian>>,
 ) -> Result<()> {
     let string =
         |val| -> Result<_> { Ok(str::from_utf8(&dwarf.attr_string(unit, val)?)?.to_string()) };
 
+    let die = node.entry();
     match die.tag() {
         gimli::DW_TAG_member => {
             let mut name = None;
@@ -88,7 +95,16 @@ pub fn modify(
                     .ok_or_else(|| anyhow!("Missing or invalid DW_AT_alignment"))?,
             });
         }
-        tag => trace!("[{:x}]<ms> unsupported tag: {}", die.offset().0, tag),
+        gimli::DW_TAG_subprogram => {
+            module.push(structure.name.clone());
+            handle_node(dwarf, unit, module, items, node)?;
+            module.pop();
+        }
+        tag => {
+            debug!("In structure: {}", structure.name);
+            debug!("Unsupported tag: {}", tag);
+            dump_die(dwarf, unit, die, 0, "<ms> ")?
+        }
     }
     Ok(())
 }

@@ -1,7 +1,5 @@
-mod dwarf;
-mod item;
-
 use anyhow::{Context, Result};
+use dwarffi::dwarf::get_items;
 use std::{fs::read, path::PathBuf};
 
 /// Simple code streaming server with asciinema and xterm.js.
@@ -26,11 +24,7 @@ fn main(args: Args) -> Result<()> {
     logger.init().unwrap();
 
     let file = read(&args.file).context("Failed to read file")?;
-    let items = dwarf::get_items(&file).context("Failed to get items from file")?;
-
-    // TODO
-    for item in items {
-        println!("{:?}", item);
-    }
+    let items = get_items(&file).context("Failed to get items from file")?;
+    dwarffi::python::make_ffi(&args.file, &items)?;
     Ok(())
 }

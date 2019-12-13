@@ -1,9 +1,9 @@
-use crate::item::Function;
+use crate::{dwarf::dump_die, item::Function};
 use anyhow::{anyhow, bail, Result};
 use gimli::{
     AttributeValue, DebuggingInformationEntry, Dwarf, EndianSlice, RunTimeEndian, Unit, UnitOffset,
 };
-use log::trace;
+use log::debug;
 use rustc_demangle::demangle;
 use std::str;
 
@@ -18,7 +18,6 @@ pub fn from_subprogram(
 
     let mut name = None;
     let mut linkage_name = None;
-    let mut full_name = None;
     let mut ret_type_index = None;
 
     let mut attrs = die.attrs();
@@ -39,33 +38,42 @@ pub fn from_subprogram(
             }
             gimli::DW_AT_linkage_name => {
                 let name = string(attr.value())?;
-                let demangled = demangle(&name).to_string();
-                // Likely nix some of these.
-                if demangled.starts_with("alloc::")
-                    || demangled.starts_with("backtrace::")
-                    || demangled.starts_with("compiler_builtins::")
-                    || demangled.starts_with("core::")
-                    || demangled.starts_with("libc::")
-                    || demangled.starts_with("panic_unwind::")
-                    || demangled.starts_with("rust_")
-                    || demangled.starts_with("rustc_demangle::")
-                    || demangled.starts_with("std::")
-                    || demangled.starts_with("<")
-                    || demangled.starts_with("__")
-                {
-                    return Ok(None);
-                }
                 linkage_name = Some(name);
-                full_name = Some(demangled);
             }
             _ => {}
         }
     }
 
+    let linkage_name = linkage_name.ok_or_else(|| {
+        let _ = dump_die(dwarf, unit, die, 0, "<ef> ");
+        anyhow!(
+            "Missing DW_AT_linkage_name from {:?} in {:?} at 0x{:x}",
+            name,
+            module,
+            die.offset().0
+        )
+    })?;
+    let full_name = demangle(&linkage_name).to_string();
+    // Likely nix some of these.
+    if full_name.starts_with("alloc::")
+        || full_name.starts_with("backtrace::")
+        || full_name.starts_with("compiler_builtins::")
+        || full_name.starts_with("core::")
+        || full_name.starts_with("libc::")
+        || full_name.starts_with("panic_unwind::")
+        || full_name.starts_with("rust_")
+        || full_name.starts_with("rustc_demangle::")
+        || full_name.starts_with("std::")
+        || full_name.starts_with("<")
+        || full_name.starts_with("__")
+    {
+        return Ok(None);
+    }
+
     Ok(Some(Function {
         name,
-        linkage_name: linkage_name.ok_or_else(|| anyhow!("Missing DW_AT_linkage_name"))?,
-        full_name: full_name.ok_or_else(|| anyhow!("Missing DW_AT_linkage_name"))?,
+        linkage_name,
+        full_name,
         module: module.to_vec(),
         ret_type_index,
         arguments: Vec::new(),
@@ -102,12 +110,15 @@ pub fn modify(
                 }
             }
 
-            let name =
-                name.ok_or_else(|| anyhow!("Missing DW_AT_name from DW_TAG_formal_parameter"))?;
-            let ty = ty.ok_or_else(|| anyhow!("Missing DW_AT_type"))?;
+            let ty =
+                ty.ok_or_else(|| anyhow!("Missing DW_AT_type from DW_TAG_formal_parameter"))?;
             function.arguments.push((name, ty));
         }
-        tag => trace!("[{:x}]<mf> unsupported tag: {}", die.offset().0, tag),
+        tag => {
+            debug!("In function: {}", function.full_name);
+            debug!("Unsupported tag: {}", tag);
+            dump_die(dwarf, unit, die, 0, "<mf> ")?
+        }
     }
     Ok(())
 }

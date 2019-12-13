@@ -1,5 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 /// An item the FFI cares about.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
 pub enum Item {
     /// A method or function.
     Function(Function),
@@ -7,12 +10,15 @@ pub enum Item {
     /// A built-in type.
     BaseType(BaseType),
 
+    /// A pointer type.
+    PointerType(PointerType),
+
     /// A structure.
     Structure(Structure),
 }
 
 /// A method or function.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Function {
     /// The fully qualified name of the function.
     pub full_name: String,
@@ -30,11 +36,11 @@ pub struct Function {
     pub ret_type_index: Option<usize>,
 
     /// The arguments to the function, as pairs of `(name, type index)`.
-    pub arguments: Vec<(String, usize)>,
+    pub arguments: Vec<(Option<String>, usize)>,
 }
 
 /// A built-in type.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct BaseType {
     /// The name of the type.
     pub name: String,
@@ -50,20 +56,34 @@ pub struct BaseType {
 }
 
 /// The kind of type a `BaseType` is.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum BaseTypeKind {
     UnsignedInt,
     SignedInt,
     Float,
 
+    Bool,
     Char,
 
     Never,
     Unit,
 }
 
+/// A pointer type.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PointerType {
+    /// The name of the type.
+    pub name: String,
+
+    /// The module in which the type appeared.
+    pub module: Vec<String>,
+
+    /// The index of the type being pointed to.
+    pub type_index: usize,
+}
+
 /// A structure.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Structure {
     /// The name of the type.
     pub name: String,
@@ -82,7 +102,7 @@ pub struct Structure {
 }
 
 /// A structure member.
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StructureMember {
     /// The name of the member.
     pub name: String,

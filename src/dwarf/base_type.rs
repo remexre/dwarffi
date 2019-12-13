@@ -24,6 +24,7 @@ pub fn from_base_type(
             }
             gimli::DW_AT_encoding => {
                 kind = Some(match attr.value() {
+                    AttributeValue::Encoding(gimli::DW_ATE_boolean) => BaseTypeKind::Bool,
                     AttributeValue::Encoding(gimli::DW_ATE_float) => BaseTypeKind::Float,
                     AttributeValue::Encoding(gimli::DW_ATE_signed) => BaseTypeKind::SignedInt,
                     AttributeValue::Encoding(gimli::DW_ATE_unsigned) => BaseTypeKind::UnsignedInt,
